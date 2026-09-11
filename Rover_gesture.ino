@@ -1,0 +1,361 @@
+#include <WiFi.h>
+#include <WebServer.h>
+
+// ---------- BTS7960 PINS ----------
+
+// Left motor driver
+#define LEFT_RPWM   25
+#define LEFT_LPWM   26
+
+// Right motor driver
+#define RIGHT_RPWM  27
+#define RIGHT_LPWM  14
+
+// ---------- WIFI ----------
+
+const char* WIFI_NAME = "ROVER_ESP32";
+const char* WIFI_PASSWORD = "12345678";
+
+WebServer server(80);
+
+// ---------- MOTOR SPEED ----------
+
+int speed = 200;
+
+
+// =================================================
+// MOTOR CONTROL
+// =================================================
+
+// Left motor
+void leftMotor(int value)
+{
+  if (value > 0)
+  {
+    ledcWrite(LEFT_RPWM, value);
+    ledcWrite(LEFT_LPWM, 0);
+  }
+  else if (value < 0)
+  {
+    ledcWrite(LEFT_RPWM, 0);
+    ledcWrite(LEFT_LPWM, -value);
+  }
+  else
+  {
+    ledcWrite(LEFT_RPWM, 0);
+    ledcWrite(LEFT_LPWM, 0);
+  }
+}
+
+
+// Right motor
+void rightMotor(int value)
+{
+  if (value > 0)
+  {
+    ledcWrite(RIGHT_RPWM, value);
+    ledcWrite(RIGHT_LPWM, 0);
+  }
+  else if (value < 0)
+  {
+    ledcWrite(RIGHT_RPWM, 0);
+    ledcWrite(RIGHT_LPWM, -value);
+  }
+  else
+  {
+    ledcWrite(RIGHT_RPWM, 0);
+    ledcWrite(RIGHT_LPWM, 0);
+  }
+}
+
+
+// Stop
+void stopRover()
+{
+  leftMotor(0);
+  rightMotor(0);
+}
+
+
+// Forward
+void forward()
+{
+  leftMotor(speed);
+  rightMotor(speed);
+}
+
+
+// Backward
+void backward()
+{
+  leftMotor(-speed);
+  rightMotor(-speed);
+}
+
+
+// Turn left
+void turnLeft()
+{
+  leftMotor(-speed);
+  rightMotor(speed);
+}
+
+
+// Turn right
+void turnRight()
+{
+  leftMotor(speed);
+  rightMotor(-speed);
+}
+
+
+// =================================================
+// WEBPAGE
+// =================================================
+
+void webpage()
+{
+  String page = R"rawliteral(
+
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Rover Controller</title>
+
+<style>
+
+body {
+  background: #222;
+  color: white;
+  text-align: center;
+  font-family: Arial;
+}
+
+h1 {
+  margin-top: 30px;
+}
+
+button {
+  width: 140px;
+  height: 80px;
+  margin: 8px;
+  font-size: 22px;
+  border-radius: 15px;
+  border: none;
+}
+
+.stop {
+  background: red;
+  color: white;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h1>🚗 ROVER</h1>
+
+<p>Hold a button to move</p>
+
+<div>
+
+<button
+onmousedown="move('forward')"
+onmouseup="stop()"
+ontouchstart="move('forward')"
+ontouchend="stop()">
+
+FORWARD
+
+</button>
+
+</div>
+
+
+<div>
+
+<button
+onmousedown="move('left')"
+onmouseup="stop()"
+ontouchstart="move('left')"
+ontouchend="stop()">
+
+LEFT
+
+</button>
+
+
+<button
+class="stop"
+onclick="stop()">
+
+STOP
+
+</button>
+
+
+<button
+onmousedown="move('right')"
+onmouseup="stop()"
+ontouchstart="move('right')"
+ontouchend="stop()">
+
+RIGHT
+
+</button>
+
+</div>
+
+
+<div>
+
+<button
+onmousedown="move('backward')"
+onmouseup="stop()"
+ontouchstart="move('backward')"
+ontouchend="stop()">
+
+BACKWARD
+
+</button>
+
+</div>
+
+
+<script>
+
+let timer;
+
+function move(direction)
+{
+  send(direction);
+
+  clearInterval(timer);
+
+  timer = setInterval(function()
+  {
+    send(direction);
+  }, 100);
+}
+
+
+function stop()
+{
+  clearInterval(timer);
+  send("stop");
+}
+
+
+function send(command)
+{
+  fetch("/" + command);
+}
+
+</script>
+
+</body>
+
+</html>
+
+)rawliteral";
+
+  server.send(200, "text/html", page);
+}
+
+
+// =================================================
+// BUTTON COMMANDS
+// =================================================
+
+void commandForward()
+{
+  Serial.println("FORWARD");
+  forward();
+  server.send(200, "text/plain", "FORWARD");
+}
+
+void commandBackward()
+{
+  Serial.println("BACKWARD");
+  backward();
+  server.send(200, "text/plain", "BACKWARD");
+}
+
+void commandLeft()
+{
+  Serial.println("LEFT");
+  turnLeft();
+  server.send(200, "text/plain", "LEFT");
+}
+
+void commandRight()
+{
+  Serial.println("RIGHT");
+  turnRight();
+  server.send(200, "text/plain", "RIGHT");
+}
+
+void commandStop()
+{
+  Serial.println("STOP");
+  stopRover();
+  server.send(200, "text/plain", "STOP");
+}
+
+
+// =================================================
+// SETUP
+// =================================================
+
+void setup()
+{
+  Serial.begin(115200);
+
+  // Start PWM
+  ledcAttach(LEFT_RPWM, 20000, 8);
+  ledcAttach(LEFT_LPWM, 20000, 8);
+
+  ledcAttach(RIGHT_RPWM, 20000, 8);
+  ledcAttach(RIGHT_LPWM, 20000, 8);
+
+  // Start with motors stopped
+  stopRover();
+
+  // Create ESP32 Wi-Fi
+  WiFi.softAP(WIFI_NAME, WIFI_PASSWORD);
+
+  Serial.println();
+  Serial.println("ROVER STARTED");
+  Serial.println("Wi-Fi: ROVER_ESP32");
+  Serial.println("Password: 12345678");
+  Serial.println("Open: 192.168.4.1");
+
+  // Webpage
+  server.on("/", webpage);
+
+  // Commands
+  server.on("/forward", commandForward);
+  server.on("/backward", commandBackward);
+  server.on("/left", commandLeft);
+  server.on("/right", commandRight);
+  server.on("/stop", commandStop);
+
+  server.begin();
+}
+
+
+// =================================================
+// LOOP
+// =================================================
+
+void loop()
+{
+  server.handleClient();
+}
